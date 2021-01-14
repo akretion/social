@@ -21,17 +21,17 @@ class MailTemplate(models.Model):
             res_ids = [res_ids]
             multi_mode = False
         result = super(MailTemplate, self).generate_email(res_ids, fields=fields)
-        for res_id, template in self.get_email_template(res_ids).items():
+        for lang, (template, template_res_ids) in self._classify_per_lang(res_ids).items():
             if template.body_type == "qweb" and (not fields or "body_html" in fields):
-                for record in self.env[template.model].browse(res_id):
-                    body_html = template.body_view_id.render(
+                for record in self.env[template.model].browse(template_res_ids):
+                    body_html = template.body_view_id._render(
                         {"object": record, "email_template": template}
                     )
                     # Some wizards, like when sending a sales order, need this
                     # fix to display accents correctly
                     body_html = tools.ustr(body_html)
-                    result[res_id]["body_html"] = self.render_post_process(body_html)
-                    result[res_id]["body"] = tools.html_sanitize(
-                        result[res_id]["body_html"]
+                    result[record.id]["body_html"] = self._replace_local_links(body_html)
+                    result[record.id]["body"] = tools.html_sanitize(
+                        result[record.id]["body_html"]
                     )
         return result if multi_mode else result[res_ids[0]]
