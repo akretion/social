@@ -1,13 +1,9 @@
 # Copyright (C) 2014 - Today: GRAP (http://www.grap.coop)
 # @author: Sylvain LE GAL (https://twitter.com/legalsylvain)
 # License AGPL-3.0 or later (http://www.gnu.org/licenses/agpl.html).
-
-import logging
 from email.utils import COMMASPACE
 
 from odoo import api, models
-
-_logger = logging.getLogger(__name__)
 
 
 class IrMailServer(models.Model):

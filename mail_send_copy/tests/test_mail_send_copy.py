@@ -5,18 +5,18 @@
 
 from unittest.mock import patch
 
+from odoo import Command
 from odoo.tests import tagged
 
 from odoo.addons.mail.tests.test_mail_composer import TestMailComposer
 
 
-class TestMailSendCopy(TestMailComposer):
+class TestMailSendCopyCommon(TestMailComposer):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
         cls.env = cls.env(context={"testing": True})
 
-        # Create test partner
         cls.partner = cls.env["res.partner"].create(
             {
                 "name": "Test Partner",
@@ -24,29 +24,28 @@ class TestMailSendCopy(TestMailComposer):
             }
         )
 
+
+class TestMailSendCopy(TestMailSendCopyCommon):
     def test_send_email_with_copy(self):
         """Test that sender is added to BCC when sending email"""
         composer = self.env["mail.compose.message"].create(
             {
-                "partner_ids": [(6, 0, [self.partner.id])],
-                "subject": "Test Subject",
+                "model": "res.partner",
+                "res_ids": [self.partner.id],
+                "partner_ids": [Command.set(self.partner.ids)],
+                "subject": "Test Subject No Copy",
                 "body": "<p>Test Body</p>",
                 "email_from": "sender@example.com",
+                "composition_mode": "comment",
             }
         )
 
-        # Mock the send_email method
         with patch(
             "odoo.addons.base.models.ir_mail_server.IrMailServer.send_email"
         ) as mock_send_email:
             composer._action_send_mail()
-            # Verify that send_email was called
             self.assertTrue(mock_send_email.called)
-            # Get the arguments passed to send_email
-            call_args = mock_send_email.call_args[0]
-            # The message is the first argument
-            message = call_args[0]
-            # Check BCC in the email message
+            message = mock_send_email.call_args[0][0]
             self.assertIn("sender@example.com", message["Bcc"])
 
     def test_send_email_without_copy(self):
@@ -56,10 +55,13 @@ class TestMailSendCopy(TestMailComposer):
             .with_context(do_not_send_copy=True)
             .create(
                 {
-                    "partner_ids": [(6, 0, [self.partner.id])],
+                    "model": "res.partner",
+                    "res_ids": [self.partner.id],
+                    "partner_ids": [Command.set(self.partner.ids)],
                     "subject": "Test Subject No Copy",
                     "body": "<p>Test Body</p>",
                     "email_from": "sender@example.com",
+                    "composition_mode": "comment",
                 }
             )
         )
@@ -75,7 +77,7 @@ class TestMailSendCopy(TestMailComposer):
 
 # Code contributed by @trisdoan
 @tagged("post_install", "-at_install")
-class TestMailSendWithBcc(TestMailSendCopy):
+class TestMailSendWithBcc(TestMailSendCopyCommon):
     def test_send_email_with_existing_bcc(self):
         if not self.env["ir.module.module"].search(
             [("name", "=", "mail_composer_cc_bcc"), ("state", "=", "installed")]
@@ -85,10 +87,13 @@ class TestMailSendWithBcc(TestMailSendCopy):
         partner_bcc = self.env.ref("base.res_partner_main2")
         composer = self.env["mail.compose.message"].create(
             {
-                "partner_ids": [(6, 0, [self.partner.id])],
-                "subject": "Test Subject",
+                "model": "res.partner",
+                "res_ids": [self.partner.id],
+                "partner_ids": [Command.set(self.partner.ids)],
+                "subject": "Test Subject No Copy",
                 "body": "<p>Test Body</p>",
                 "email_from": "sender@example.com",
+                "composition_mode": "comment",
             }
         )
         composer.partner_bcc_ids = partner_bcc
@@ -97,9 +102,6 @@ class TestMailSendWithBcc(TestMailSendCopy):
             "odoo.addons.base.models.ir_mail_server.IrMailServer.send_email"
         ) as mock_send_email:
             composer._action_send_mail()
-            # Verify that send_email was called
             self.assertTrue(mock_send_email.called)
-            call_args = mock_send_email.call_args[0]
-            message = call_args[0]
-            # Check existing BCC in the email message
+            message = mock_send_email.call_args[0][0]
             self.assertIn("dwayne.newman28@example.com", message["Bcc"])
