@@ -80,6 +80,7 @@ Contributors
 ------------
 
 - Sylvain LE GAL (https://www.twitter.com/legalsylvain)
+- Doan Minh Tri
 
 Maintainers
 -----------
