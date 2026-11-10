@@ -2,18 +2,17 @@
 # License AGPL-3.0 or later (https://www.gnu.org/licenses/agpl).
 
 from email.message import EmailMessage
-from unittest.mock import patch
 
 from odoo import Command
 
-from odoo.addons.mail.tests.test_mail_composer import TestMailComposer
+from odoo.addons.mail.tests.common import MailCommon
 
 
-class TestMailSendCopyCommon(TestMailComposer):
+class TestMailSendCopyCommon(MailCommon):
     @classmethod
     def setUpClass(cls):
         super().setUpClass()
-        cls.env = cls.env(context={"testing": True})
+        cls.env = cls.env(context=dict(cls.env.context, tracking_disable=True))
         cls.partner = cls.env["res.partner"].create(
             {
                 "name": "Test Partner",
@@ -21,8 +20,8 @@ class TestMailSendCopyCommon(TestMailComposer):
             }
         )
 
-    def _create_composer(self, **context):
-        return (
+    def _send_composer_mail(self, **context):
+        composer = (
             self.env["mail.compose.message"]
             .with_context(**context)
             .create(
@@ -37,40 +36,46 @@ class TestMailSendCopyCommon(TestMailComposer):
                 }
             )
         )
+        with self.mock_mail_gateway():
+            composer._action_send_mail()
+        return self.emails
+
+    def _send_message(self, message):
+        with self.mock_smtplib_connection():
+            self.env["ir.mail_server"].send_email(message)
+        return self.emails
 
 
 class TestMailSendCopy(TestMailSendCopyCommon):
     def test_send_email_with_copy(self):
-        """The sender is added to Bcc when sending an email."""
-        composer = self._create_composer()
-        with patch(
-            "odoo.addons.base.models.ir_mail_server.IrMailServer.send_email"
-        ) as mock_send_email:
-            composer._action_send_mail()
-        self.assertTrue(mock_send_email.called)
-        message = mock_send_email.call_args[0][0]
-        self.assertIn("sender@example.com", message["Bcc"])
+        """The sender receives a copy of the email."""
+        emails = self._send_composer_mail()
+        self.assertEqual(len(emails), 1)
+        self.assertCountEqual(
+            emails[0]["smtp_to_list"], ["test@example.com", "sender@example.com"]
+        )
 
     def test_send_email_without_copy(self):
-        """The sender is not added to Bcc when ``do_not_send_copy`` is set."""
-        composer = self._create_composer(do_not_send_copy=True)
-        with patch(
-            "odoo.addons.base.models.ir_mail_server.IrMailServer.send_email"
-        ) as mock_send_email:
-            composer._action_send_mail()
-        self.assertTrue(mock_send_email.called)
-        message = mock_send_email.call_args[0][0]
-        self.assertNotIn("Bcc", message)
+        """The sender gets no copy when ``do_not_send_copy`` is set."""
+        emails = self._send_composer_mail(do_not_send_copy=True)
+        self.assertEqual(len(emails), 1)
+        self.assertEqual(emails[0]["smtp_to_list"], ["test@example.com"])
 
     def test_send_email_with_existing_bcc(self):
-        """The sender is appended to an existing Bcc header."""
+        """The sender is added to the existing Bcc recipients."""
         message = EmailMessage()
         message["From"] = "sender@example.com"
+        message["To"] = "test@example.com"
         message["Bcc"] = "existing@example.com"
-        with patch(
-            "odoo.addons.base.models.ir_mail_server.IrMailServer.send_email"
-        ) as mock_send_email:
-            self.env["ir.mail_server"].send_email(message)
-        self.assertTrue(mock_send_email.called)
-        sent = mock_send_email.call_args[0][0]
-        self.assertEqual(sent["Bcc"], "existing@example.com, sender@example.com")
+        emails = self._send_message(message)
+        self.assertCountEqual(
+            emails[0]["smtp_to_list"],
+            ["test@example.com", "existing@example.com", "sender@example.com"],
+        )
+
+    def test_send_email_without_sender(self):
+        """No copy is added when the email has no sender."""
+        message = EmailMessage()
+        message["To"] = "test@example.com"
+        emails = self._send_message(message)
+        self.assertEqual(emails[0]["smtp_to_list"], ["test@example.com"])
